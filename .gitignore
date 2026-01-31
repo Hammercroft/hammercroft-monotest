@@ -1,0 +1,26 @@
+
+# Object files
+*.o
+
+# Binaries
+bin/
+dist/
+monotest
+*.exe
+*.dll
+
+# Backups
+*.tar.gz
+*.backup
+*.shader_version
+
+# Clangd
+compile_commands.json
+.cache/
+
+# Misc
+.vscode/
+
+# Non-distributable assets (due to copyright)
+assets/bkg/testbackground.pbm
+assets/snd/boing.wav
