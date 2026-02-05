@@ -18,6 +18,10 @@ monotest
 compile_commands.json
 .cache/
 
+# Doxygen
+docs/html/
+docs/latex/
+
 # Misc
 .vscode/
 

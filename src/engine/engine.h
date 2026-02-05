@@ -1,130 +1,168 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
-#include "drawables.h"
-#include <functional>
-#include <string>
-#include <unistd.h>
+#include "bkg/bkgimagemanager.h"
+#include <iostream>
 
-class Registry; // Forward declaration
+// ENGINE, HEADER
 
+// Static limits regardless of memory
+#define BKG_TABLE_SIZE 32
+#define SPRITE_TABLE_SIZE 2048
+
+/**
+@namespace mtengine
+@brief The namespace used for all MONOTEST engine code.
+*/
+namespace mtengine {
+
+class IGame;
+
+/**
+@class Engine
+@brief The main engine singleton.
+*/
 class Engine {
-public:
-  virtual ~Engine() {}
 
-  // Registry for ECS updates
-  void set_registry(Registry *reg);
-  Registry *registry = nullptr;
+  // Engine state
+  bool main_game_loop_running = true;
+  long tick = 0;
+  BkgImage *active_background = nullptr;
 
-  // Global rendering state
-  bool invert_colors = false;
-  bool interlaced_mode = false;
-  bool dead_space_white = true;
+  // Presentation Flags
   bool pixel_perfect_mode = true;
+  bool invert_colors = false;
+  bool dead_space_is_white = true;
 
-  // Feature Toggles (API)
-  void toggle_interlace();
-  void set_interlace(bool active);
+  BkgImageManager bkg_manager{0}; // to be initialized by .init()
 
-  void toggle_invert_colors();
-  void set_invert_colors(bool active);
+public:
+  // destructor, implemented on platform specific files
+  ~Engine();
 
-  void toggle_dead_space_color();
-  void set_dead_space_color(bool white);
+  // not a method, but this allows engine.cpp to access protected constructor
+  friend Engine *singleton();
 
-  void toggle_pixel_perfect();
-  void set_pixel_perfect(bool active);
+  /**
+  @brief Initializes the engine.
+  @param width The width of the canvas.
+  @param height The height of the canvas.
+  @param scale The scale of the canvas.
+  @param sprite_mem_size The size of the sprite memory arena.
+  @param bkg_mem_size The size of the background image memory arena.
+  @return True if the engine was initialized successfully, false otherwise.
+  */
+  virtual bool init(int width, int height, float scale, size_t sprite_mem_size,
+                    size_t bkg_mem_size); // to be implemented on platform-side
 
-  // Drawable Management (World/Layer 2)
-  // Returns the index of the added drawable
-  int add_world_drawable(struct WorldDrawable &d);
+  /**
+  @brief Starts a game and plays it until exited.
+  */
+  virtual void play(IGame &game); // implemented on engine.cpp
 
-  // Removes drawable at index, performing swap-and-pop
-  void remove_world_drawable(int index);
+  /**
+    @brief Resets all "visual data" stored in the engine (e.g. for a scene
+    transition). Unloads all assets, clears draw lists and lookup tables, and
+    destroys all Engine-managed ECS Drawable components.
+    @note You may need to re-assign ECS Entities their Drawables after calling
+    this function.
+    */
+  virtual void clear_scene(); // implemented on engine.cpp
 
-  // Drawable Management (Foreground/Layer 3)
-  int add_foreground_drawable(struct ForegroundDrawable &d);
-  void remove_foreground_drawable(int index);
+  /**
+  @brief Unloads all assets and performs a full state reset by destroying
+  all ECS Entities handled by the engine and their associated components.
+  */
+  virtual void unload_all(); // implemented on engine.cpp
 
-  ForegroundDrawable *get_foreground_drawable(int index) {
-    if (index < 0 || index >= foreground_drawables_count)
-      return nullptr;
-    return &foreground_drawables[index];
-  }
+  /**
+  @brief Loads a background image from a file. The loaded image will also be
+  listed in the background image asset lookup table with the filename as its
+  key.
+  @param filename The filename of the background image.
+  @return The loaded background image.
+  */
+  virtual BkgImage *
+  load_bkg_image(const char *filename); // implemented on engine.cpp
 
-  // Initialize the engine with specific dimensions
-  virtual bool init(int width, int height, int scale) = 0;
+  /**
+  @brief Sets the active background image.
+  @param bkg Pointer to the background image to set.
+  */
+  void set_active_background(BkgImage *bkg); // implemented on engine.cpp
 
-  // The three layers of Drawables
-  static const int MAX_BACKGROUND_DRAWABLES = 64;
-  static const int MAX_WORLD_DRAWABLES = 256;
-  static const int MAX_FOREGROUND_DRAWABLES = 128;
+  /**
+  @brief Safely sets the active background image.
+  @param bkg Pointer to the background image to set.
+  @return True if bkg is not null, false otherwise.
+  */
+  bool try_set_active_background(BkgImage *bkg); // implemented on engine.cpp
 
-  struct BackgroundDrawable background_drawables[MAX_BACKGROUND_DRAWABLES];
-  int background_drawables_count = 0;
+  /**
+  @brief Gets the currently active background image.
+  @return Pointer to the active background image, or nullptr if none is set.
+  */
+  BkgImage *get_active_background(); // implemented on engine.cpp
 
-  struct WorldDrawable world_drawables[MAX_WORLD_DRAWABLES];
-  int world_drawables_count = 0;
+  // --- Presentation State Accessors ---
 
-  struct ForegroundDrawable foreground_drawables[MAX_FOREGROUND_DRAWABLES];
-  int foreground_drawables_count = 0;
+  // NO API TO BE PROVIDED FOR PIXEL PERFECT MODE!
 
-  // TODO make an on-demand sort function for BackgroundDrawables and
-  // ForegroundDrawables that sorts by z-index (sort key). DO NOT INCLUDE THE
-  // SORT IN THE RENDERING LOOP!
-  // TODO find a way to track specific drawables as they risk being moved due to
-  // sorting
+  /**
+  @brief Sets the global color inversion mode.
+  @param enabled If true, the canvas colors are inverted (black becomes white).
+  */
+  void set_invert_colors(bool enabled);
 
-  // Process pending events (input, window resize, close)
-  // Returns false if the application should quit
-  virtual bool process_events() = 0;
+  /**
+  @brief Checks if color inversion is enabled.
+  @return True if enabled, false otherwise.
+  */
+  bool get_invert_colors();
 
-  // Start the engine with a specific game instance
-  // Template prevents circular dependency on Game type
-  template <typename GameApp> void start(GameApp &game) {
-    run_loop([&]() {
-      game.update(*this);
-      draw_start();
-      draw_lists();
-      draw_end();
-    });
-  }
+  /**
+  @brief Sets the color of the "dead space" (borders) outside the canvas.
+  @param is_white If true, dead space is white. If false, it is black.
+  */
+  void set_dead_space_is_white(bool is_white);
 
-  // Rendering steps
-  virtual void draw_start() = 0; // prepare canvas & empty draw queue
-  virtual void draw_lists() = 0; // draw from drawables to canvas
-  virtual void draw_end() = 0;   // present canvas to application window
-
-  // Get current state
-  virtual bool is_running() = 0;
-  virtual unsigned long get_time_ms() = 0;
-  virtual void sleep_ms(int ms) = 0;
-
-  // Audio configuration
-  virtual void play_sound(const char *filename) = 0;
-  virtual void load_sound(const char *filename) = 0;
-  virtual void clear_sounds() = 0;
-
-  // Background Management
-  virtual void set_active_background(struct BkgImage *bkg) = 0;
-  virtual struct BkgImage *get_active_background() = 0;
-
-  // Dimensions
-  virtual int get_width() const = 0;
-  virtual int get_height() const = 0;
+  /**
+  @brief Checks if dead space is white.
+  @return True if dead space is white, false if black.
+  */
+  bool get_dead_space_is_white();
 
 protected:
-  // Run the main game loop with a provided callback
-  void run_loop(std::function<void()> loop_body) {
-    while (process_events()) {
-      loop_body();
-      sleep_ms(16); // ~60 FPS simple cap
-      // sleep_ms(20); // ~50 FPS simple cap
-    }
-  }
+  // constructor, to be implemented on platform-side
+  Engine();
+
+  // Poll platform-specific events (input, window close, etc.)
+  // to be implemented on platform-side
+  void poll_events();
+
+  // Prepare the canvas for drawing
+  // to be implemented on platform-side
+  virtual void draw_prepare();
+
+  // Draw all drawables to the canvas
+  // to be implemented on platform-side
+  virtual void draw_lists();
+
+  // Present the canvas to the screen
+  // to be implemented on platform-side
+  virtual void draw_present();
+
+private:
+  // Common code for all platforms to prepare for asset management
+  // implemented on engine.cpp
+  void init_asset_management(size_t sprite_mem_size, size_t bkg_mem_size);
 };
 
-// Factory function to create the appropriate engine instance
-Engine *create_engine();
+/**
+@brief Returns the engine singleton, creating it if it doesn't exist.
+*/
+Engine *singleton();
+
+} // namespace mtengine
 
 #endif // ENGINE_H

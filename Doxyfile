@@ -1,0 +1,16 @@
+# Doxyfile 1.9.1
+
+PROJECT_NAME           = "MONOTEST Engine"
+OUTPUT_DIRECTORY       = docs
+INPUT                  = src docs/pages
+RECURSIVE              = YES
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_PROTECTED      = NO
+EXTRACT_STATIC         = NO
+generate_html          = YES
+generate_latex         = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+HIDE_UNDOC_MEMBERS     = YES
+HIDE_UNDOC_CLASSES     = YES

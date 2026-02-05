@@ -1,170 +1,79 @@
-# Makefile for MONOTEST
-
-# Defaults
-platform ?= x11
+# remember to document in BUILD.txt
 CXX := g++
-CXXFLAGS := -std=c++11 -Isrc
+CXXFLAGS := -std=c++11 -I src
+SRC := src/main.cpp src/game.cpp src/engine/engine.cpp
 
-# Optimization flags
-ifeq ($(optimize),1)
-    CXXFLAGS += -O3 -fno-math-errno -fno-trapping-math
-else ifeq ($(optimize),2)
-    CXXFLAGS += -Ofast -flto -Wno-stringop-overflow
-    LDFLAGS += -flto
-else ifeq ($(optimize),3)
-    CXXFLAGS += -Ofast -flto -march=native -Wno-stringop-overflow
-    LDFLAGS += -flto
-else ifdef optimize
-    CXXFLAGS += -O3 -fno-math-errno -fno-trapping-math
+# Platform Configuration
+# Invoke with platform=<platform>
+platform ?= x11
+
+ifeq ($(platform),x11)
+    CXXFLAGS += -march=x86-64
+    PLATFORM_SRC := src/engine/platform/engine_x11.cpp
+else ifeq ($(platform),modernx11)
+    CXXFLAGS += -march=x86-64-v3
+    PLATFORM_SRC := src/engine/platform/engine_x11.cpp
+else
+    $(error Unknown platform: $(platform). Valid options: x11, modernx11)
 endif
 
-# Warning flags
-ifdef warnings
+# Strict Mode
+# Invoke with strict=1
+ifdef strict
     CXXFLAGS += -Wall -Wextra
 endif
-LDFLAGS :=
 
-# Output directories
-BIN_DIR := bin
-DIST_DIR := dist
-TARGET_EXT :=
-
-# Platform specific settings
-ifeq ($(platform),x11)
-    CXXFLAGS += -DPLATFORM_X11 -march=x86-64
-    LDFLAGS += -lX11 -ldl -lpthread -lm
-    # Add dependency on engine_x11.cpp
-    PLATFORM_SRC := src/engine/engine_x11.cpp
-else ifeq ($(platform),retrox11)
-    CXXFLAGS += -DPLATFORM_X11 -m32 -march=i686
-    LDFLAGS += -lX11 -ldl -lpthread -lm -m32
-    # Add dependency on engine_x11.cpp
-    PLATFORM_SRC := src/engine/engine_x11.cpp
-else ifeq ($(platform),modernx11)
-    CXXFLAGS += -DPLATFORM_X11 -march=x86-64-v3
-    LDFLAGS += -lX11 -ldl -lpthread -lm
-    # Add dependency on engine_x11.cpp
-    PLATFORM_SRC := src/engine/engine_x11.cpp
-else ifeq ($(platform),xcb)
-    CXXFLAGS += -DPLATFORM_XCB -march=x86-64
-    LDFLAGS += -lxcb -ldl -lpthread -lm
-    PLATFORM_SRC := src/engine/engine_xcb.cpp
-else ifeq ($(platform),modernxcb)
-    CXXFLAGS += -DPLATFORM_XCB -march=x86-64-v3
-    LDFLAGS += -lxcb -ldl -lpthread -lm
-    PLATFORM_SRC := src/engine/engine_xcb.cpp
-else ifeq ($(platform),gdi)
-    # GDI platform only supports optimize=1 or no optimization
-    ifeq ($(optimize),2)
-        $(error GDI platform does not support optimize=2. Use optimize=1 or no optimization.)
-    endif
-    ifeq ($(optimize),3)
-        $(error GDI platform does not support optimize=3. Use optimize=1 or no optimization.)
-    endif
-    CXX := i686-w64-mingw32-g++
-    CXXFLAGS := -std=c++11 -Isrc -DPLATFORM_GDI -march=i686 -static -static-libgcc -static-libstdc++
-    # Re-apply optimization if optimize=1
-    ifeq ($(optimize),1)
-        CXXFLAGS += -O3 -fno-math-errno -fno-trapping-math
-    endif
-    # Re-apply warnings if set
-    ifdef warnings
-        CXXFLAGS += -Wall -Wextra
-    endif
-    LDFLAGS := -Wl,--subsystem,windows:5.1 -lgdi32 -lwinmm -lole32 -static
-    PLATFORM_SRC := src/engine/engine_gdi.cpp
-    TARGET_EXT := .exe
-else ifeq ($(platform),d3d11)
-    # D3D11 platform targets 64-bit Windows Vista SP2 with Direct3D 11
-    # Only supports optimize=1 or no optimization
-    ifeq ($(optimize),2)
-        $(error D3D11 platform does not support optimize=2. Use optimize=1 or no optimization.)
-    endif
-    ifeq ($(optimize),3)
-        $(error D3D11 platform does not support optimize=3. Use optimize=1 or no optimization.)
-    endif
-    CXX := x86_64-w64-mingw32-g++
-    CXXFLAGS := -std=c++11 -Isrc -DPLATFORM_D3D11 -march=x86-64 -static -static-libgcc -static-libstdc++
-    # Re-apply optimization if optimize=1
-    ifeq ($(optimize),1)
-        CXXFLAGS += -O3 -fno-math-errno -fno-trapping-math
-    endif
-    # Re-apply warnings if set
-    ifdef warnings
-        CXXFLAGS += -Wall -Wextra
-    endif
-    # Windows Vista SP2 subsystem version is 6.0
-    LDFLAGS := -Wl,--subsystem,windows:6.0 -ld3d11 -ldxgi -ld3dcompiler -luuid -lgdi32 -lwinmm -lole32 -static
-    PLATFORM_SRC := src/engine/engine_d3d11.cpp
-    TARGET_EXT := .exe
+# Output Configuration
+# Invoke with dist=1 or use 'make dist' target
+ifdef dist
+    OUT_DIR := dist
 else
-    $(error Unsupported platform: $(platform))
+    OUT_DIR := bin
 endif
 
-# Source files
-# Source files
-SRC := src/main.cpp src/game.cpp $(PLATFORM_SRC) src/engine/bkgimagefileloader.cpp src/engine/bkgimageassetmanager.cpp src/engine/engine.cpp src/engine/ecs.cpp src/engine/spritefileloader.cpp src/engine/spriteassetmanager.cpp src/engine/scripting.cpp
+RUNTIME_TARGET := $(OUT_DIR)/monotest
+ENGINE_TARGET := $(OUT_DIR)/engine.so
 
-# Lua Source files (Core only, exclude lua.c and luac.c)
-LUA_DIR := src/vendor/lua/src
-LUA_SRC := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c, $(wildcard $(LUA_DIR)/*.c))
-LUA_OBJ := $(LUA_SRC:.c=.o)
+# Build Selection
+# Invoke with build=game or build=engine. Default: both.
+ifeq ($(build),game)
+    BUILD_TARGETS := $(RUNTIME_TARGET)
+else ifeq ($(build),engine)
+    BUILD_TARGETS := $(ENGINE_TARGET)
+else
+    BUILD_TARGETS := $(RUNTIME_TARGET) $(ENGINE_TARGET)
+endif
 
-# Add Lua to includes
-CXXFLAGS += -I$(LUA_DIR)
-
-OBJ := $(SRC:.cpp=.o) $(LUA_OBJ) src/engine/miniaudio_impl.o
-
-# Target binary name
-TARGET_NAME := monotest
-TARGET := $(BIN_DIR)/$(TARGET_NAME)$(TARGET_EXT)
+.PHONY: all clean dist build
 
 # Default target
-all: $(TARGET)
+all: build
 
-# Audio implementation flags
-AUDIO_FLAGS := $(CXXFLAGS) -w
-ifeq ($(optimize),1)
-    AUDIO_FLAGS += -O2
-else ifeq ($(optimize),2)
-    AUDIO_FLAGS += -O3
-else ifeq ($(optimize),3)
-    AUDIO_FLAGS += -O3
-else ifdef optimize
-    AUDIO_FLAGS += -O2
+# Recursive call for dist target to enable dist mode
+dist:
+	$(MAKE) build dist=1
+
+build: $(BUILD_TARGETS)
+ifdef dist
+	@echo "Copying assets to dist..."
+	@mkdir -p $(OUT_DIR)
+	@cp -r assets $(OUT_DIR)/
 endif
 
-# Custom rule for miniaudio implementation
-src/engine/miniaudio_impl.o: src/engine/miniaudio_impl.cpp
-	$(CXX) $(AUDIO_FLAGS) -c -o $@ $<
+# Additional Engine Sources
+BKG_SRC := src/engine/bkg/bkgimagemanager.cpp
 
-# Generic rule for other object files
-# Generic rule for other object files
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c -o $@ $<
+# Build the engine shared library
+# Note: -fPIC is needed for shared libraries
+$(ENGINE_TARGET): src/engine/engine.cpp src/engine/engine.h $(PLATFORM_SRC) $(BKG_SRC)
+	@mkdir -p $(OUT_DIR)
+	$(CXX) $(CXXFLAGS) -fPIC -shared -o $@ $^ -lX11
 
-# Generic rule for C object files (for Lua)
-%.o: %.c
-	$(CXX) $(filter-out -std=c++11, $(CXXFLAGS)) -x c -c -o $@ $<
+# Build the game executable (monotest)
+# Links against engine.so
+$(RUNTIME_TARGET): src/main.cpp src/game.cpp $(ENGINE_TARGET)
+	@mkdir -p $(OUT_DIR)
+	$(CXX) $(CXXFLAGS) -L$(OUT_DIR) -l:engine.so -Wl,-rpath='$$ORIGIN' -o $@ $^
 
-# Build target
-$(TARGET): $(OBJ)
-	@mkdir -p $(BIN_DIR)
-	@mkdir -p $(BIN_DIR)/assets
-	@if [ -d "assets" ]; then cp -r assets/* $(BIN_DIR)/assets/; fi
-	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
-
-# Dist target
-.PHONY: dist
-dist: $(OBJ)
-	@mkdir -p $(DIST_DIR)
-	$(CXX) $(CXXFLAGS) -o $(DIST_DIR)/$(TARGET_NAME)$(TARGET_EXT) $^ $(LDFLAGS)
-	@mkdir -p $(DIST_DIR)/assets
-	@if [ -d "assets" ]; then cp -r assets/* $(DIST_DIR)/assets/; fi
-	@echo "Distribution build created in $(DIST_DIR)"
-
-# Clean
-.PHONY: clean
 clean:
-	rm -rf $(BIN_DIR) $(DIST_DIR)
-	rm -f $(OBJ)
+	rm -rf bin dist

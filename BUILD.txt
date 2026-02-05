@@ -1,73 +1,53 @@
-# Build Instructions
+MONOTEST Build Instructions
+===========================
 
-Building assumes that you are in a Debian-based Linux distribution.
+This project uses a standard Makefile for building.
 
-To make a 'distribution build', add `dist` as a make argument.
+Prerequisites
+-------------
+- GCC (g++) supporting C++11
+- Make
+- standard Linux headers (for X11 and dlfcn)
 
-## Dependencies
+One-Liner
+---------
+    make
 
-### Standard Compilation
-- `g++` (build-essential)
-- `make`
+Build Options
+-------------
 
-### OPTIMIZATION (IMPORTANT FOR INTENDED PERFORMANCE)
-**Make Argument:** `optimize=1`
-**Description:** Enables all 'necessary' optimization flags, specifically `-O3 -fno-math-errno -fno-trapping-math`.
-**Note:** miniaudio code will be optimized with `-O2` instead of `-O3` for safety.
+### 1. Platforms
+By default, the build targets generic `x86-64`. You can optimize for modern CPUs (AVX2, etc.) using:
 
-### OPTIMIZATION (EXPERIMENTAL / VERY RISKY)
-**Make Argument:** `optimize=2`
-**Description:** Enables dangerous optimization flags, specifically `-Ofast -flto`.
-**Note:** miniaudio code will also be optimized with `-O3`.
+    make platform=modernx11
 
-### OPTIMIZATION (FOR YOUR NATIVE CPU, EXPERIMENTAL / VERY RISKY)
-**Make Argument:** `optimize=3`
-**Description:** Same as above but forces `-march=native`.
+Supported platforms:
+- `x11` (default, march=x86-64)
+- `modernx11` (march=x86-64-v3)
 
-### Platform: X11 x64 (Default, uses engine_x11.cpp)
-**Make Argument:** `platform=x11`
-**Packages:**
-- `libx11-dev`
+### 2. Output Mode
+You can create a standalone distribution folder containing the binaries and assets:
 
-### Platform: X11 i686 (Compatibility for older systems, uses engine_x11.cpp)
-**Make Argument:** `platform=retrox11`
-**Packages:**
-- `libx11-dev`
-**Note:** This creates 32-bit binaries!
+    make dist
 
-### Platform: X11 x64v3 (Performance for newer computers, uses engine_x11.cpp)
-**Make Argument:** `platform=modernx11`
-**Packages:**
-- `libx11-dev`
+This creates a `dist/` directory.
 
-### Platform: XCB x64 (Experimental, uses engine_xcb.cpp)
-**Make Argument:** `platform=xcb`
-**Packages:**
-- `libxcb1-dev`
-- `libxcb-image0-dev` (Optional/Future use)
-- `libxcb-keysyms1-dev` (Recommended for better input, currently optional)
+### 3. Strict Mode
+To enable strict warning checks (`-Wall -Wextra`), pass `strict=1`:
 
-### Platform: XCB x64v3 (Experimental, Performance for newer computers, uses engine_xcb.cpp)
-**Make Argument:** `platform=modernxcb`
-**Packages:**
-- `libxcb1-dev`
-- `libxcb-image0-dev` (Optional/Future use)
-- `libxcb-keysyms1-dev` (Recommended for better input, currently optional)
+    make strict=1
 
-### Platform: GDI + Windows i686 (Experimental, Windows XP 32-bit)
-**Make Argument:** `platform=gdi`
-**Packages:**
-- `g++-mingw-w64-i686-win32` (MinGW cross-compiler for Windows)
-**Note:** This creates 32-bit Windows executables (.exe) targeting Windows XP 32-bit. Only supports no optimization or `optimize=1`. Has only been tested on Linux with Wine. Performance is expected to be poor on Windows Vista and later.
+### 4. Build Targets
+You can choose to build only specific components. This is useful for hot-reloading (rebuilding just the game logic) or engine development.
 
-### Platform: D3D11 + Windows x64 (Experimental, Windows Vista SP2 or newer, 64-bit)
-**Make Argument:** `platform=d3d11`
-**Packages:**
-- `g++-mingw-w64-x86-64-win32` (MinGW-w64 cross-compiler for 64-bit Windows)
-**Note:** This creates 64-bit Windows executables (.exe) targeting Windows Vista SP2 or newer. Only supports no optimization or `optimize=1`.
+    make build=game     # Builds bin/game.so
+    make build=engine   # Builds bin/monotest
+    make                # Builds both (default)
 
-### Audio (All Platforms)
-Audio is handled via `miniaudio` (included), requires:
-- `libdl` (Dynamic Linking)
-- `libpthread` (Threading)
-- `libm` (Math)
+Examples
+--------
+Build optimized game logic only (fast iteration):
+    make build=game platform=modernx11
+
+Full strict distribution build:
+    make dist strict=1 platform=modernx11

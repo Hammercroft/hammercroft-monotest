@@ -33,6 +33,9 @@ All audio assets are expected to be a Windows ADPCM WAV file. You can convert an
 - `g++`, `make`
 - `libx11-dev` (for X11 platform)
 - `libxcb1-dev` (for XCB platform)
+- `libx11-dev` (for X11 platform)
+- `libxcb1-dev` (for XCB platform)
+- `libluajit-5.1-dev` (Optional: LuaJIT Headers for `use_luajit=1`, only tested and likely only works for `x11`/`xcb` platform builds)
 
 See BUILD.txt for more information
 

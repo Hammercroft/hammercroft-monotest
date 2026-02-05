@@ -1,107 +1,126 @@
 #include "engine.h"
-#include "ecs.h"
-#include <iostream>
+#include "igame.h"
+#include <chrono>
+#include <cstring>
+#include <thread>
 
-void Engine::set_registry(Registry *reg) { registry = reg; }
+// COMMON-SIDE ENGINE IMPLEMENTATION, SOURCE
 
-int Engine::add_world_drawable(WorldDrawable &d) {
-  if (world_drawables_count >= MAX_WORLD_DRAWABLES) {
-    std::cerr << "Engine Error: World drawable limit reached!" << std::endl;
-    return -1;
-  }
+namespace mtengine {
 
-  int index = world_drawables_count;
-  world_drawables[index] = d;
-  world_drawables_count++;
-  return index;
-}
+const int ENGINE_FRAME_INTERVAL = 20; // 20ms = 50fps
 
-void Engine::remove_world_drawable(int index) {
-  if (index < 0 || index >= world_drawables_count) {
-    return;
-  }
+void Engine::play(IGame &game) {
+  std::cout << "Engine::play() called\n";
 
-  int last_index = world_drawables_count - 1;
+  // Prepare for main game loop
+  using clock = std::chrono::steady_clock;
+  auto last_frame_start = clock::now();
+  const float frame_interval_seconds = ENGINE_FRAME_INTERVAL / 1000.0f;
+  const std::chrono::duration<float> min_frame_time(frame_interval_seconds);
+  const float fixed_dt = frame_interval_seconds; // for ECS
+  float accumulator = 0.0f;
 
-  // If we are not removing the very last element, we do the swap
-  if (index != last_index) {
-    // Move the last element into the gap
-    world_drawables[index] = world_drawables[last_index];
+  // Main game loop
+  while (Engine::main_game_loop_running) {
+    Engine::tick++;
+    auto current_frame_start = clock::now();
 
-    // Notify ECS that this entity's drawable has moved
-    if (registry) {
-      uint32_t moved_owner_id = world_drawables[index].owner_id;
-      registry->update_drawable_index(moved_owner_id, index);
+    // Calculate actual time passed since last loop iteration
+    std::chrono::duration<float> elapsed =
+        current_frame_start - last_frame_start;
+    float dt = elapsed.count();
+    last_frame_start = current_frame_start;
+
+    // Prevent "Spiral of Death": cap dt if the window was moved or app frozen
+    if (dt > 0.25f)
+      dt = 0.25f;
+
+    accumulator += dt;
+
+    // Poll platform events
+    poll_events();
+    game.early_update(*this, dt);
+    while (accumulator >= fixed_dt) {
+      // <- CALL ENGINE ECS PROCESSING HERE, pass fixed_dt
+      accumulator -= fixed_dt;
+    }
+    game.update(*this, dt);
+    draw_prepare();
+    draw_lists();
+    draw_present();
+
+    // Hybrid Spin-Lock
+    auto target_wake_time = current_frame_start + min_frame_time;
+    // Phase 1: Polite Sleep: Give back CPU if we have more than 1.5ms to wait
+    // We use 1.5ms as a buffer because OS sleep is often imprecise
+    auto time_left = target_wake_time - clock::now();
+    if (time_left > std::chrono::microseconds(1500)) {
+      std::this_thread::sleep_for(time_left - std::chrono::microseconds(1000));
+    }
+    // Phase 2: Busy-Wait: Spin the CPU for the final precision gap
+    while (clock::now() < target_wake_time) {
+      // Prevent -03 from throwing away this loop
+      __asm__ __volatile__("" ::: "memory");
     }
   }
-
-  // Decrement count (effectively popping the last element)
-  world_drawables_count--;
 }
 
-int Engine::add_foreground_drawable(ForegroundDrawable &d) {
-  if (foreground_drawables_count >= MAX_FOREGROUND_DRAWABLES) {
-    std::cerr << "Engine Error: Foreground drawable limit reached!"
-              << std::endl;
-    return -1;
+void Engine::clear_scene() {
+  std::cout << "clear_scene() called...\n";
+  bkg_manager.clear();
+}
+
+void Engine::unload_all() {
+  std::cout << "unload_all() called...\n";
+  bkg_manager.clear();
+}
+
+BkgImage *Engine::load_bkg_image(const char *filename) {
+  /*std::cout << "load_bkg_image() called for " << filename << "\n";
+  BkgImage *img = LoadBkgImagePBM(&bkg_arena, filename);
+  if (img) {
+    // Store in lookup table
+    RegisterBkgImageAsAsset(bkg_lookup_table, BKG_TABLE_SIZE, filename, img);
   }
-
-  int index = foreground_drawables_count;
-  foreground_drawables[index] = d;
-  foreground_drawables_count++;
-  return index;
+  return img;*/
+  // return nullptr; // TODO implement
+  return bkg_manager.load(filename);
 }
 
-void Engine::remove_foreground_drawable(int index) {
-  if (index < 0 || index >= foreground_drawables_count) {
-    return;
+void Engine::set_active_background(BkgImage *bkg) { active_background = bkg; }
+
+bool Engine::try_set_active_background(BkgImage *bkg) {
+  if (bkg) {
+    active_background = bkg;
+    return true;
   }
-
-  int last_index = foreground_drawables_count - 1;
-
-  // If we are not removing the very last element, we do the swap
-  if (index != last_index) {
-    // Move the last element into the gap
-    foreground_drawables[index] = foreground_drawables[last_index];
-
-    // Notify ECS that this entity's drawable has moved
-    if (registry) {
-      uint32_t moved_owner_id = foreground_drawables[index].owner_id;
-      registry->update_drawable_index(moved_owner_id, index);
-    }
-  }
-
-  // Decrement count
-  foreground_drawables_count--;
+  std::cerr << "Warning: try_set_active_background called with null image.\n";
+  return false;
 }
 
-void Engine::toggle_interlace() {
-  interlaced_mode = !interlaced_mode;
-  std::cout << "Interlaced Mode: " << (interlaced_mode ? "ON" : "OFF")
-            << std::endl;
+BkgImage *Engine::get_active_background() { return active_background; }
+
+void Engine::set_invert_colors(bool enabled) { invert_colors = enabled; }
+bool Engine::get_invert_colors() { return invert_colors; }
+
+void Engine::set_dead_space_is_white(bool is_white) {
+  dead_space_is_white = is_white;
+}
+bool Engine::get_dead_space_is_white() { return dead_space_is_white; }
+
+void Engine::init_asset_management(size_t sprite_mem_size,
+                                   size_t bkg_mem_size) {
+  // bkg_arena.base_memory = (uint8_t *)malloc(bkg_mem_size);
+  // bkg_arena.capacity = bkg_mem_size;
+  // bkg_arena.bytes_used = 0;
+  // memset(bkg_lookup_table, 0, sizeof(bkg_lookup_table));
+  bkg_manager = BkgImageManager(bkg_mem_size);
 }
 
-void Engine::set_interlace(bool active) { interlaced_mode = active; }
-
-void Engine::toggle_invert_colors() {
-  invert_colors = !invert_colors;
-  std::cout << "Invert Colors: " << (invert_colors ? "ON" : "OFF") << std::endl;
+Engine *singleton() {
+  static Engine instance;
+  return &instance;
 }
 
-void Engine::set_invert_colors(bool active) { invert_colors = active; }
-
-void Engine::toggle_dead_space_color() {
-  dead_space_white = !dead_space_white;
-  std::cout << "Dead Space Color: " << (dead_space_white ? "WHITE" : "BLACK")
-            << std::endl;
-}
-
-void Engine::set_dead_space_color(bool white) { dead_space_white = white; }
-
-void Engine::toggle_pixel_perfect() {
-  pixel_perfect_mode = !pixel_perfect_mode;
-  std::cout << "Pixel Perfect: " << (pixel_perfect_mode ? "ON" : "OFF")
-            << std::endl;
-}
-
-void Engine::set_pixel_perfect(bool active) { pixel_perfect_mode = active; }
+} // namespace mtengine

@@ -2,11 +2,19 @@
 #include "ecs.h"
 #include "engine.h"
 
+// did you just use relative paths just to appease intellisense...
+
 // Include Lua C headers
 extern "C" {
+#ifdef USE_LUAJIT
+#include <lauxlib.h>
+#include <lua.h>
+#include <lualib.h>
+#else
 #include "../vendor/lua/src/lauxlib.h"
 #include "../vendor/lua/src/lua.h"
 #include "../vendor/lua/src/lualib.h"
+#endif
 }
 
 // Game & Asset Includes

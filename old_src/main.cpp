@@ -1,6 +1,5 @@
 #include "engine/engine.h"
 #include "game.h"
-#include "gameinfo.h"
 #include <iostream>
 
 #ifdef _WIN32
@@ -16,8 +15,8 @@
 #endif
 
 int main(int /*argc*/, char ** /*argv*/) {
+  // Set CWD to executable directory
 #ifdef _WIN32
-  // Set Current Working Directory (Windows)
   char exe_path[PATH_MAX];
   DWORD count = GetModuleFileNameA(NULL, exe_path, PATH_MAX);
   if (count != 0 && count < PATH_MAX) {
@@ -32,7 +31,6 @@ int main(int /*argc*/, char ** /*argv*/) {
     }
   }
 #else
-  // Set Current Working Directory (Unix/Linux)
   char exe_path[PATH_MAX];
   ssize_t count = readlink("/proc/self/exe", exe_path, PATH_MAX);
   if (count != -1) {
@@ -43,26 +41,24 @@ int main(int /*argc*/, char ** /*argv*/) {
   }
 #endif
 
-  // Create engine to access singleton
-  mtengine::Engine *engine = mtengine::singleton();
+  Engine *engine = create_engine();
   if (!engine) {
     std::cerr << "Failed to create engine" << std::endl;
     return 1;
   }
 
-  if (!engine->init(GAME_CANVAS_WIDTH, GAME_CANVAS_HEIGHT, GAME_CANVAS_SCALE,
-                    SPRITE_MEM_SIZE, BKG_MEM_SIZE)) {
+  if (!engine->init(CANVAS_WIDTH, CANVAS_HEIGHT, SCALE)) {
     std::cerr << "Failed to initialize engine" << std::endl;
+    delete engine;
     return 1;
   }
 
-  // Initialize game
   Game game;
   game.init(*engine);
 
-  // Start game
-  engine->play(game);
+  // Start loop
+  engine->start(game);
 
-  // delete engine; // Removed: engine is a singleton
+  delete engine;
   return 0;
 }
