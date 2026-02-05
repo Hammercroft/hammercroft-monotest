@@ -28,3 +28,7 @@ docs/latex/
 # Non-distributable assets (due to copyright)
 assets/bkg/testbackground.pbm
 assets/snd/boing.wav
+
+# Local reference material
+*.old
+old_src/
